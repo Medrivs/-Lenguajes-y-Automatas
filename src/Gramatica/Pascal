@@ -1,0 +1,71 @@
+program
+    → PROGRAM ID ; block . EOF
+
+block
+    → declaration_part statement_part
+
+declaration_part
+    → VAR declaration ; { declaration ; }
+    | ε
+
+declaration
+    → identifier_list : type
+
+identifier_list
+    → ID { , ID }
+
+type
+    → INTEGER | REAL | BOOLEAN
+
+statement_part
+    → compound_statement
+
+compound_statement
+    → BEGIN statement_list END
+
+statement_list
+    → [ statement { ; statement } [ ; ] ]
+
+statement
+    → assignment
+    | if_statement
+    | while_statement
+    | compound_statement
+
+assignment
+    → ID := expression
+
+if_statement
+    → IF expression THEN statement
+      [ ELSE statement ]
+
+while_statement
+    → WHILE expression DO statement
+
+expression
+    → simple_expression
+      [ relop simple_expression ]
+
+simple_expression
+    → [ + | - ] term { addop term }
+
+term
+    → factor { mulop factor }
+
+factor
+    → ID
+    | INT_LITERAL
+    | FLOAT_LITERAL
+    | TRUE
+    | FALSE
+    | ( expression )
+    | NOT factor
+
+relop
+    → = | <> | < | <= | > | >=
+
+addop
+    → + | - | OR
+
+mulop
+    → * | / | AND
