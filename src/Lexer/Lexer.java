@@ -1,148 +1,245 @@
 package Lexer;
-import java.util.function.Predicate;
 
+import java.util.Locale;
+
+// Lexer (analizador léxico): lee el código fuente y lo divide en tokens.
 public class Lexer {
-    private final String entrada;
-    private int pos;
-    private char caracterActual;
+    private final String input;    // Código fuente que vamos a analizar.
+    private int position;          // Posición actual dentro del texto.
+    private int line;              // Línea actual.
+    private int column;            // Columna actual.
+    private char currentChar;      // Carácter que estamos leyendo.
 
-    public Lexer(String entrada) {
-        this.entrada = entrada;
-        this.pos = 0;
-        this.caracterActual = (entrada.length() > 0) ? entrada.charAt(0) : '\0';
+    // Lexer (constructor): recibe el código e inicia la lectura desde el principio.
+    public Lexer(String input) {
+        this.input = input;
+        this.position = 0;
+        this.line = 1;
+        this.column = 1;
+        this.currentChar = input.length() > 0 ? input.charAt(0) : '\0';
     }
 
+    // isAtEnd (fin de entrada): comprueba si ya leímos todos los caracteres.
+    private boolean isAtEnd() {
+        return position >= input.length();
+    }
+
+    // peek (mirar adelante): ve el siguiente carácter sin cambiar la posición.
+    private char peek() {
+        if (position + 1 < input.length()) {
+            return input.charAt(position + 1);
+        }
+        return '\0';
+    }
+
+    // advance (avanzar): pasa al siguiente carácter y actualiza línea y columna.
     private void advance() {
-        this.pos++;
-        caracterActual = (pos < entrada.length()) ? entrada.charAt(pos) : '\0';
-    }
-    
-    private void saltateElEspacio() {
-        while (Character.isWhitespace(caracterActual)) {
-            advance();
+        if (isAtEnd()) {
+            return;
         }
-    }
-    
-    private String readWhile(Predicate<Character> condicion) {
-        StringBuilder sb = new StringBuilder();
-        while (caracterActual != '\0' && condicion.test(caracterActual)) {
-            sb.append(caracterActual);
-            advance();
-        }
-        return sb.toString();
-    }
-    
-    private Token number() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(readWhile(Character::isDigit));
-        if (caracterActual == '.') {
-            sb.append('.');
-            advance();
-            if (Character.isDigit(caracterActual)) {
-                sb.append(readWhile(Character::isDigit));
-                return new Token(sb.toString(), TokenType.FLOAT_LITERAL);
-            } else {
-                throw new RuntimeException("Número mal formado");
+
+        if (currentChar == '\r') {
+            // En Windows, \r\n representa un solo salto de línea.
+            if (peek() == '\n') {
+                position++;
             }
+            line++;
+            column = 1;
+        } else if (currentChar == '\n') {
+            line++;
+            column = 1;
+        } else {
+            column++;
         }
-        return new Token(sb.toString(), TokenType.INT_LITERAL);
+
+        position++;
+        if (isAtEnd()) {
+            currentChar = '\0';
+        } else {
+            currentChar = input.charAt(position);
+        }
     }
 
-    private boolean isValidChar(char c) {
-        if (Character.isLetterOrDigit(c)) {
-            return true; 
-        } else if (c == '_') {
-            return true; 
-        } else {
-            return false; 
+    // skipWhitespace (saltar espacios): ignora espacios, tabulaciones y saltos de línea.
+    private void skipWhitespace() {
+        while (!isAtEnd() && (currentChar == ' ' || currentChar == '\t' ||
+                currentChar == '\n' || currentChar == '\r')) {
+            advance();
         }
     }
-    
-    private Token identifier() {
-        StringBuilder sb = new StringBuilder();
 
-        while (caracterActual != '\0' && isValidChar(caracterActual)) {
-            sb.append(caracterActual); 
-            advance();                 
-        }
-        
-        String id = sb.toString().toUpperCase(); // Lo pasamos a mayúscula para coincidir con Micro
-        
-        switch (id) {
-            case "PROGRAM": return new Token(id, TokenType.PROGRAM);
-            case "VAR": return new Token(id, TokenType.VAR);
-            case "INTEGER": return new Token(id, TokenType.INTEGER);
-            case "REAL": return new Token(id, TokenType.REAL);
-            case "BOOLEAN": return new Token(id, TokenType.BOOLEAN);
-            case "BEGIN": return new Token(id, TokenType.BEGIN);
-            case "END": return new Token(id, TokenType.END);
-            case "IF": return new Token(id, TokenType.IF);
-            case "THEN": return new Token(id, TokenType.THEN);
-            case "ELSE": return new Token(id, TokenType.ELSE);
-            case "WHILE": return new Token(id, TokenType.WHILE);
-            case "DO": return new Token(id, TokenType.DO);
-        }
-        // Si no es palabra reservada, asume que es el nombre de una variable (ID)
-        return new Token(sb.toString(), TokenType.ID); // Devolvemos el original sin mayúsculas
+    // isDigit (es dígito): indica si el carácter está entre '0' y '9'.
+    private boolean isDigit(char character) {
+        return character >= '0' && character <= '9';
     }
-    
-    private Token texto() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("\"");
-        advance(); 
-        while (caracterActual != '\0' && caracterActual != '"') {
-            sb.append(caracterActual);
+
+    // isLetter (es letra): indica si es una letra inglesa de A a Z.
+    private boolean isLetter(char character) {
+        return (character >= 'a' && character <= 'z') ||
+                (character >= 'A' && character <= 'Z');
+    }
+
+    // isIdentifierPart (parte de identificador): admite letras, números y '_'.
+    private boolean isIdentifierPart(char character) {
+        return isLetter(character) || isDigit(character) || character == '_';
+    }
+
+    // readNumber (leer número): reconoce números enteros y reales.
+    // El punto pertenece al número solo cuando después viene un dígito.
+    private Token readNumber() {
+        int startLine = line;
+        int startColumn = column;
+        StringBuilder number = new StringBuilder();
+
+        while (!isAtEnd() && isDigit(currentChar)) {
+            number.append(currentChar);
             advance();
         }
-        if (caracterActual == '"') {
-            sb.append('"');
+
+        if (!isAtEnd() && currentChar == '.' && isDigit(peek())) {
+            number.append('.');
             advance();
-            return new Token(sb.toString(), TokenType.STRING_LITERAL);
-        } else {
-            throw new RuntimeException("String no cerrado");
+
+            while (!isAtEnd() && isDigit(currentChar)) {
+                number.append(currentChar);
+                advance();
+            }
+
+            return new Token(number.toString(), TokenType.FLOAT_LITERAL,
+                    startLine, startColumn);
         }
+
+        return new Token(number.toString(), TokenType.INT_LITERAL,
+                startLine, startColumn);
     }
-    
+
+    // readIdentifier (leer identificador): reconoce nombres y palabras reservadas.
+    // Para reconocer reservadas ignoramos mayúsculas, pero conservamos el texto original.
+    private Token readIdentifier() {
+        int startLine = line;
+        int startColumn = column;
+        StringBuilder name = new StringBuilder();
+
+        while (!isAtEnd() && isIdentifierPart(currentChar)) {
+            name.append(currentChar);
+            advance();
+        }
+
+        String lexeme = name.toString();
+        // Locale.ROOT hace que las mayúsculas no dependan del idioma del equipo.
+        String keyword = lexeme.toUpperCase(Locale.ROOT);
+        TokenType type;
+
+        switch (keyword) {
+            case "PROGRAM": type = TokenType.PROGRAM; break;
+            case "VAR": type = TokenType.VAR; break;
+            case "INTEGER": type = TokenType.INTEGER; break;
+            case "REAL": type = TokenType.REAL; break;
+            case "BOOLEAN": type = TokenType.BOOLEAN; break;
+            case "BEGIN": type = TokenType.BEGIN; break;
+            case "END": type = TokenType.END; break;
+            case "IF": type = TokenType.IF; break;
+            case "THEN": type = TokenType.THEN; break;
+            case "ELSE": type = TokenType.ELSE; break;
+            case "WHILE": type = TokenType.WHILE; break;
+            case "DO": type = TokenType.DO; break;
+            case "AND": type = TokenType.AND; break;
+            case "OR": type = TokenType.OR; break;
+            case "NOT": type = TokenType.NOT; break;
+            case "TRUE": type = TokenType.TRUE; break;
+            case "FALSE": type = TokenType.FALSE; break;
+            default: type = TokenType.ID;
+        }
+
+        return new Token(lexeme, type, startLine, startColumn);
+    }
+
+    // nextToken (siguiente token): devuelve un token cada vez que el parser lo pide.
+    // Primero salta espacios; luego reconoce números, identificadores y símbolos.
     public Token nextToken() {
-        while (caracterActual != '\0') {
-            if (Character.isWhitespace(caracterActual)) {
-                saltateElEspacio();
-                continue;
-            }
-            if (Character.isDigit(caracterActual)) {
-                return number();
-            } else if (Character.isLetter(caracterActual)) {
-                return identifier();
-            } else if (caracterActual == '"') {
-                return texto();
-            }
-            
-            switch(caracterActual){
-                case '+': advance(); return new Token("+", TokenType.SUM);
-                case '-': advance(); return new Token("-", TokenType.SUB);
-                case '*': advance(); return new Token("*", TokenType.MUL);
-                case '/': advance(); return new Token("/", TokenType.DIV); 
-                case '(': advance(); return new Token("(", TokenType.LPARENT);
-                case ')': advance(); return new Token(")", TokenType.RPARENT);
-                case ';': advance(); return new Token(";", TokenType.SEMICOLON);
-                case '.': advance(); return new Token(".", TokenType.DOT);
-                case ',': advance(); return new Token(",", TokenType.COMMA);
-                
-                case ':': 
-                    advance(); 
-                    if(caracterActual == '=') {
-                        advance(); 
-                        return new Token(":=", TokenType.ASSIGN);
-                    } else {
-                        return new Token(":", TokenType.COLON); // Sirve para VAR x : INTEGER
-                    }
-                    
-                case '=': advance(); return new Token("=", TokenType.EQUAL);
-                case '>': advance(); return new Token(">", TokenType.GREATER_THAN);
-                case '<': advance(); return new Token("<", TokenType.LESS_THAN);
-                default : throw new RuntimeException("Char ilegal [" + caracterActual + "]");
-            }
+        skipWhitespace();
+        int startLine = line;
+        int startColumn = column;
+
+        if (isAtEnd()) {
+            return new Token("", TokenType.EOF, startLine, startColumn);
         }
-        return new Token("", TokenType.EOF);
+
+        if (isDigit(currentChar)) {
+            return readNumber();
+        }
+        if (isLetter(currentChar)) {
+            return readIdentifier();
+        }
+
+        switch (currentChar) {
+            case '+':
+                advance();
+                return new Token("+", TokenType.SUM, startLine, startColumn);
+            case '-':
+                advance();
+                return new Token("-", TokenType.SUB, startLine, startColumn);
+            case '*':
+                advance();
+                return new Token("*", TokenType.MUL, startLine, startColumn);
+            case '/':
+                advance();
+                return new Token("/", TokenType.DIV, startLine, startColumn);
+            case '(':
+                advance();
+                return new Token("(", TokenType.LPARENT, startLine, startColumn);
+            case ')':
+                advance();
+                return new Token(")", TokenType.RPARENT, startLine, startColumn);
+            case ';':
+                advance();
+                return new Token(";", TokenType.SEMICOLON, startLine, startColumn);
+            case '.':
+                advance();
+                return new Token(".", TokenType.DOT, startLine, startColumn);
+            case ',':
+                advance();
+                return new Token(",", TokenType.COMMA, startLine, startColumn);
+            case '=':
+                advance();
+                return new Token("=", TokenType.EQUAL, startLine, startColumn);
+
+            case ':':
+                advance();
+                if (!isAtEnd() && currentChar == '=') {
+                    advance();
+                    return new Token(":=", TokenType.ASSIGN, startLine, startColumn);
+                }
+                return new Token(":", TokenType.COLON, startLine, startColumn);
+
+            case '<':
+                advance();
+                if (!isAtEnd() && currentChar == '=') {
+                    advance();
+                    return new Token("<=", TokenType.LESS_EQUAL, startLine, startColumn);
+                }
+                if (!isAtEnd() && currentChar == '>') {
+                    advance();
+                    return new Token("<>", TokenType.NOT_EQUAL, startLine, startColumn);
+                }
+                return new Token("<", TokenType.LESS_THAN, startLine, startColumn);
+
+            case '>':
+                advance();
+                if (!isAtEnd() && currentChar == '=') {
+                    advance();
+                    return new Token(">=", TokenType.GREATER_EQUAL, startLine, startColumn);
+                }
+                return new Token(">", TokenType.GREATER_THAN, startLine, startColumn);
+
+            default:
+                String character = String.valueOf(currentChar);
+                if (currentChar == '\0') {
+                    character = "\\0";
+                }
+                // Error léxico: un carácter no pertenece a nuestro lenguaje.
+                throw new RuntimeException("Lexical error at line " + line +
+                        ", column " + column + ": invalid character '" + character + "'");
+        }
     }
 }
